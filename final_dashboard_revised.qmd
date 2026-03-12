@@ -1,0 +1,251 @@
+---
+title: "Final Project -- Data Analysis & Dashboard"
+author: "Drew Tang, Rosie Pratt, Poe Claudio"
+date: "2026-03-06"
+format:
+  dashboard:
+    theme: cosmo
+    embed-resources: true
+    orientation: rows
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Overview
+
+## Row {height=35%}
+
+### Project Overview
+
+This dashboard examines whether economic stress helps explain variation in witch trial deaths. Our group focuses on the relationship between wheat prices, climate context, and recorded deaths from witch trials. The project is motivated by historical scholarship that connects the Little Ice Age, harvest instability, and social scapegoating in early modern Europe. A short overview from *Encyclopaedia Britannica* explains that witchcraft accusations often emerged during periods of social tension, fear, and instability, which makes economic pressure an important context for analysis.
+
+We use two datasets to study this question. The first is the **Witch-Trials** dataset compiled by Jake Russ, which records witch trial information including year and deaths. The second is **The Allen-Unger Commodities Dataset** by Bob Allen, from which we use standardized wheat price data for Aix. By joining these sources by year, we can compare patterns in wheat prices and witch trial deaths over time.
+
+Our analysis matters because it asks whether material hardship may have contributed to violence during a period that already targeted vulnerable populations, especially women. At the same time, we recognize limitations: historical records can be incomplete, geographically narrow, and shaped by official documents that may omit or distort what really happened. This means our dashboard should be read as an exploratory analysis rather than definitive proof of causation.
+
+### Research Questions
+
+Our project centers on three questions:
+
+1. **How do wheat prices correlate with the total number of deaths from witch trials?**
+2. **How does the broader climate context help us interpret changes in wheat prices?**
+3. **Are wheat prices higher in years with recorded witch trial deaths than in years without recorded deaths?**
+
+These questions let us connect economic conditions to historical violence while still being transparent about what our data can and cannot show directly.
+
+## Row {height=65%}
+
+### Historical Context and Sources
+
+Our initial interest came from reading about the European witch trials and noticing repeated references to the Little Ice Age. Several public-facing articles argue that colder and more unstable climate conditions may have intensified food scarcity, fear, and blame. That background led us to focus on wheat prices as a measurable sign of economic stress rather than trying to directly measure every possible social cause of witch trials.
+
+Relevant background reading and data sources:
+
+- [Britannica overview of witchcraft and witch trials](https://www.britannica.com/topic/witchcraft)
+- [European Witch-Hunting: A Brief History](https://brewminate.com/european-witch-hunting-a-brief-history/)
+- [Were the Witch Trials a Result of Climate Change?](https://www.history.com/news/witch-trials-climate-change)
+- [Witch-Trials dataset by Jake Russ](https://github.com/JakeRuss/witch-trials)
+- [Allen-Unger Commodities Dataset by Bob Allen](https://gpih.ucdavis.edu/Datafilelist.htm)
+
+### Visual Flair
+
+## Row
+
+### Historical Illustration
+
+![Illustration of the Salem witch trials](Salem_witch2.jpg){width=100%}
+
+### Context
+
+This illustration depicts a dramatic moment during the Salem witch trials. 
+It helps provide historical context for the social climate in which witch trials occurred.
+
+# Data Context
+
+## Row {height=40%}
+```{r}
+#| warning: false
+#| label: setup
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+
+## Row {height=40%}
+
+### Why These Data
+
+We chose these datasets because they allow us to combine a record of violence with a record of economic conditions. The witch trial data gives us yearly information about deaths, while the wheat dataset provides a standardized price measure that can be compared across years. Joining them by year gives us one table that supports each of our research questions.
+
+A major limitation is scope. The wheat data comes from a single place, Aix, and does not represent all of Europe. In addition, historical witch trial records are drawn from documents that may be incomplete or biased. For that reason, our dashboard is best understood as a focused case study rather than a universal explanation of all witch trials.
+
+### Data Loading
+
+The first step is to load both datasets so they can be cleaned and joined. We do this in a separate code chunk because importing data is its own conceptual step and sets up the rest of the analysis.
+
+```{r}
+#| label: load-data
+trials <- read.csv("trials.csv", stringsAsFactors = FALSE)
+wheat <- read.csv("Aix_Wheat.csv", stringsAsFactors = FALSE)
+```
+
+## Row {height=60%}
+
+### Data Preparation
+
+Before making visualizations, we convert years and numeric values into usable formats and summarize witch trial deaths by year. This step is necessary because the raw trial data contains multiple records, while our analysis requires one total death count per year. We also rename and clean the wheat data so the join works consistently.
+
+```{r}
+#| label: wrangle-data
+#| code-overflow: scroll
+trials_yearly_deaths <- trials |>
+  mutate(
+    year = suppressWarnings(as.integer(year)),
+    deaths = suppressWarnings(as.numeric(deaths))
+  ) |>
+  filter(!is.na(year)) |>
+  group_by(year) |>
+  summarise(deaths_total = sum(deaths, na.rm = TRUE), .groups = "drop") |>
+  arrange(year)
+
+wheat_clean <- wheat |>
+  rename(
+    year = Year,
+    wheat_price = Standardized.Value
+  ) |>
+  mutate(
+    year = suppressWarnings(as.integer(year)),
+    wheat_price = suppressWarnings(as.numeric(wheat_price))
+  ) |>
+  filter(!is.na(year), !is.na(wheat_price)) |>
+  distinct(year, .keep_all = TRUE) |>
+  arrange(year)
+
+joined_deaths <- trials_yearly_deaths |>
+  inner_join(wheat_clean, by = "year") |>
+  arrange(year)
+
+head(joined_deaths)
+```
+
+### Ethics and Interpretation
+
+This project deals with violence that disproportionately affected women and other socially vulnerable people. It is important not to reduce witch trials to economics alone. Wheat prices may help explain periods of social stress, but they do not justify or fully explain misogyny, religious persecution, or the role of local institutions. Ethical analysis requires us to acknowledge both what the data reveals and what it leaves out.
+
+# Analysis: Correlation and Trends
+
+## Row {height=45%}
+
+### RQ1 Interpretation
+
+Our first question asks whether higher wheat prices are associated with more witch trial deaths. A scatterplot is appropriate here because it lets us compare the two variables directly and check whether there is an overall upward or downward pattern. We add a linear trend line to make the general relationship easier to interpret.
+
+### Interactive Scatterplot: Wheat Prices vs. Witch Trial Deaths
+
+```{r}
+#| label: rq1-plot
+#| code-overflow: scroll
+p1 <- ggplot(joined_deaths, aes(x = wheat_price, y = deaths_total,
+                                text = paste("Year:", year,
+                                             "<br>Wheat price:", round(wheat_price, 2),
+                                             "<br>Total deaths:", deaths_total))) +
+  geom_point(color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "Wheat Prices vs. Witch Trial Deaths",
+    x = "Wheat Price",
+    y = "Total Witch Trial Deaths"
+  )
+
+ggplotly(p1, tooltip = "text")
+```
+
+## Row {height=55%}
+
+### RQ2 Interpretation
+
+Our second question is about climate context. We do not have direct annual temperature measurements in the final joined dataset, so this graph should be read carefully. Instead of claiming to measure temperature directly, we use the wheat price trend over time to see whether prices remain stable or fluctuate across the historical period. This helps us evaluate whether long-run instability in subsistence prices may have been part of the broader context discussed in climate scholarship.
+
+### Wheat Prices Over Time
+
+```{r}
+#| label: rq2-plot
+#| code-overflow: scroll
+ggplot(wheat_clean, aes(x = year, y = wheat_price)) +
+  geom_line(color = "darkred") +
+  labs(
+    title = "Wheat Prices Over Time",
+    x = "Year",
+    y = "Wheat Price"
+  )
+```
+
+# Analysis: Group Comparison
+
+## Row {height=40%}
+
+### RQ3 Interpretation
+
+Our third question compares years with recorded witch trial deaths to years without recorded deaths. A grouped comparison is useful because it simplifies the dataset into two categories and lets us ask whether the average wheat price differs between them. This does not prove that one caused the other, but it does show whether years of violence were also years of relatively greater economic strain.
+
+### Build Comparison Table
+
+```{r}
+#| label: rq3-summary
+#| code-overflow: scroll
+trial_wheat_summary <- joined_deaths |>
+  mutate(death_level = ifelse(deaths_total > 0, "Years with deaths", "Years with no deaths")) |>
+  group_by(death_level) |>
+  summarise(avg_wheat_price = mean(wheat_price, na.rm = TRUE), .groups = "drop")
+
+trial_wheat_summary
+```
+
+## Row {height=60%}
+
+### Average Wheat Price by Witch Trial Death Activity
+
+```{r}
+#| label: rq3-plot
+#| code-overflow: scroll
+ggplot(trial_wheat_summary, aes(x = death_level, y = avg_wheat_price, fill = death_level)) +
+  geom_col() +
+  labs(
+    title = "Average Wheat Price by Witch Trial Death Activity",
+    x = "Witch Trial Death Activity",
+    y = "Average Wheat Price",
+    fill = "Group"
+  )
+```
+
+### Summary Takeaways
+
+The first visualization suggests a positive relationship between wheat prices and witch trial deaths, although the data points are still concentrated around relatively low death totals. That means the correlation appears suggestive rather than overwhelming. The second visualization shows that wheat prices changed over time, but without direct temperature data we should avoid making a strong claim that temperature alone explains those changes. The third visualization shows that years with recorded witch trial deaths have somewhat higher average wheat prices, which supports the broader idea that economic pressure may have contributed to social tension.
+
+Together, these findings suggest that wheat prices are a useful indicator of historical stress, but they are only one piece of a larger story. In future work, it would be helpful to add direct climate data, broader regional coverage, and additional social variables so the analysis can move beyond a single-location case study.
+
+# Group Information
+
+## Row {height=50%}
+
+### Team Members
+
+- Drew Tang
+- Rosie Pratt
+- Poe Claudio
+
+### Methods Used
+
+Our group relied mainly on tools covered in class, including `mutate()`, `filter()`, `group_by()`, `summarise()`, `arrange()`, and `ggplot()`. These functions allowed us to clean the data, merge the datasets, and produce visualizations that answer each research question.
+
+## Row {height=50%}
+
+### Technical Notes
+
+We added interactivity with the `plotly` library by converting the first `ggplot` into an interactive graph. This improves the dashboard because viewers can hover over points to inspect specific years, wheat prices, and death totals. We also used `as.integer()` and `as.numeric()` so the data could be joined and plotted correctly.
+
+### Final Reflection
+
+This project helped us think about how historical violence can be studied through data while still requiring careful interpretation. Our dashboard shows that quantitative methods can reveal meaningful patterns, but it also reminds us that social history cannot be reduced to numbers alone. The combination of narrative context, ethical discussion, and interactive visuals makes the analysis clearer and more responsible.
